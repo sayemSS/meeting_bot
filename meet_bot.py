@@ -1,317 +1,378 @@
 """
-Google Meet Bot - Step 1 Implementation
-========================================
-এই bot Google Meet এ join করবে এবং audio কে text এ convert করবে
+Dialogsy Meet Bot - Enhanced Version
+====================================
+এই bot Google Meet এ join করবে এবং meeting শেষ না হওয়া পর্যন্ত থাকবে
+Real-time audio transcription করবে
 """
 
 from playwright.sync_api import sync_playwright
 import time
+import threading
+import pyaudio
+import wave
 import speech_recognition as sr
+from datetime import datetime
 import os
 
 # ============================================
-# CONFIGURATION (তোমার settings এখানে)
+# CONFIGURATION
 # ============================================
 
-MEETING_LINK = "https://meet.google.com/oqq-rxku-acq"  # এখানে তোমার meet link দাও
-BOT_NAME = "Dialogsy Bot"  # Bot এর নাম
-RECORDING_DURATION = 60  # কত সেকেন্ড record করবে (60 = 1 minute)
+MEETING_LINK = "https://meet.google.com/cko-gupy-pem"  # তোমার meeting link
+BOT_NAME = "Meeting Bot"
+OUTPUT_FOLDER = "transcripts"  # Transcript save হবে এই folder এ
+
+# Recording settings
+CHUNK = 1024  # Audio chunk size
+FORMAT = pyaudio.paInt16
+CHANNELS = 2
+RATE = 44100
+RECORD_SECONDS = 5  # প্রতি 5 সেকেন্ডে একটা chunk transcribe করবে
 
 # ============================================
-# STEP 1: Browser খোলা এবং Meet এ যাওয়া
+# Create output folder
 # ============================================
 
-def join_google_meet(meeting_url):
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
+    print(f"📁 Created folder: {OUTPUT_FOLDER}")
+
+# ============================================
+# Global variables
+# ============================================
+
+is_recording = False
+audio_thread = None
+
+# ============================================
+# Audio Recording এবং Transcription
+# ============================================
+
+def continuous_audio_transcribe():
     """
-    এই function Google Meet এ bot কে join করায়
-    
-    কী করে:
-    1. Chrome browser খোলে (headless না, তুমি দেখতে পাবে)
-    2. Meeting link এ যায়
-    3. Name set করে
-    4. Mic/Camera permission দেয়
-    5. Join button এ click করে
+    Background thread যেটা continuously audio record এবং transcribe করবে
     """
+    global is_recording
     
-    print("🚀 Bot starting...")
-    print(f"📞 Meeting link: {meeting_url}")
+    recognizer = sr.Recognizer()
+    transcript_file = os.path.join(OUTPUT_FOLDER, f"transcript_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    
+    print(f"📝 Transcript will be saved to: {transcript_file}")
+    
+    # Create/open transcript file
+    with open(transcript_file, 'w', encoding='utf-8') as f:
+        f.write(f"Meeting Transcript - Started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 70 + "\n\n")
+    
+    while is_recording:
+        try:
+            # Microphone থেকে audio capture
+            with sr.Microphone() as source:
+                print("🎤 Listening...")
+                
+                # Ambient noise adjust
+                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                
+                # Audio record (5 seconds chunk)
+                audio = recognizer.listen(source, timeout=5, phrase_time_limit=5)
+                
+                print("📝 Transcribing...")
+                
+                try:
+                    # Google Speech Recognition (free)
+                    text = recognizer.recognize_google(audio, language='en-US')
+                    
+                    if text.strip():  # যদি কিছু text পাওয়া যায়
+                        timestamp = datetime.now().strftime('%H:%M:%S')
+                        output = f"[{timestamp}] {text}\n"
+                        
+                        print(f"✅ {output.strip()}")
+                        
+                        # File এ save করা
+                        with open(transcript_file, 'a', encoding='utf-8') as f:
+                            f.write(output)
+                
+                except sr.UnknownValueError:
+                    # কোন speech detect হয়নি (silence বা noise)
+                    pass
+                except sr.RequestError as e:
+                    print(f"⚠️ API Error: {e}")
+                    time.sleep(2)
+        
+        except Exception as e:
+            print(f"⚠️ Audio capture error: {e}")
+            time.sleep(1)
+    
+    print("🎤 Audio transcription stopped")
+
+# ============================================
+# Meeting Join করা (Enhanced)
+# ============================================
+
+def join_google_meet_persistent(meeting_url):
+    """
+    Meeting এ join করবে এবং meeting শেষ না হওয়া পর্যন্ত থাকবে
+    """
+    global is_recording, audio_thread
+    
+    print("=" * 70)
+    print("🤖 DIALOGSY MEET BOT - STARTING")
+    print("=" * 70)
+    print(f"📞 Meeting Link: {meeting_url}")
+    print(f"🤖 Bot Name: {BOT_NAME}")
+    print()
+    print("💡 TIP: Press Ctrl+C to stop the bot and leave meeting")
+    print("=" * 70)
+    print()
     
     with sync_playwright() as p:
         # ============================================
-        # Browser launch করা
+        # Browser Launch
         # ============================================
         
-        # headless=False মানে browser window দেখা যাবে
-        # তুমি যদি background এ run করতে চাও তাহলে headless=True দাও
+        print("🌐 Launching browser...")
+        
         browser = p.chromium.launch(
-            headless=False,  # False = browser দেখবে, True = background
+            headless=False,
             args=[
-                '--use-fake-ui-for-media-stream',  # Auto allow mic/camera
-                '--use-fake-device-for-media-stream',  # Fake device use করবে
-                '--disable-blink-features=AutomationControlled'  # Bot detection এড়ানোর জন্য
+                '--use-fake-ui-for-media-stream',
+                '--use-fake-device-for-media-stream',
+                '--disable-blink-features=AutomationControlled',
+                '--autoplay-policy=no-user-gesture-required'
             ]
         )
         
-        # ============================================
-        # New browser context (নতুন tab এর মতো)
-        # ============================================
-        
-        # Microphone এবং camera permission দিয়ে দিচ্ছি
         context = browser.new_context(
             permissions=['microphone', 'camera'],
             viewport={'width': 1280, 'height': 720}
         )
         
-        # ============================================
-        # New page (tab) open করা
-        # ============================================
-        
         page = context.new_page()
         
-        print("🌐 Opening Google Meet...")
+        # ============================================
+        # Navigate to Meeting
+        # ============================================
         
-        # Meeting link এ navigate করা
-        page.goto(meeting_url, timeout=60000)  # 60 seconds timeout
-        
-        # Page load হওয়ার জন্য wait করা
+        print("📍 Navigating to meeting...")
+        page.goto(meeting_url, timeout=60000)
         time.sleep(5)
         
         # ============================================
-        # Bot এর নাম set করা
+        # Set Name
         # ============================================
         
-        print(f"✍️ Setting name as: {BOT_NAME}")
+        print(f"✍️ Setting name: {BOT_NAME}")
         
         try:
-            # Name input field খুঁজে বের করা
-            # Google Meet এ name field এর selector হলো: input[placeholder="Your name"]
             name_input = page.locator('input[placeholder="Your name"]')
-            
-            # যদি name field থাকে তাহলে fill করা
             if name_input.count() > 0:
                 name_input.fill(BOT_NAME)
-                print("✅ Name set successfully")
+                print("✅ Name set")
         except Exception as e:
-            print(f"⚠️ Name field not found (maybe already logged in): {e}")
+            print(f"⚠️ Name field not found: {e}")
         
         time.sleep(2)
         
         # ============================================
-        # Mic/Camera control করা
+        # Control Camera/Mic
         # ============================================
         
-        print("🎤 Setting up mic and camera...")
+        print("🎛️ Setting up camera and microphone...")
         
         try:
-            # Camera OFF করা
-            # Google Meet এ camera button selector
-            camera_button = page.locator('div[data-tooltip*="camera" i]')
-            if camera_button.count() > 0:
-                # যদি camera ON থাকে তাহলে OFF করা
-                button_state = camera_button.get_attribute('data-is-muted')
-                if button_state == 'false':
-                    camera_button.click()
-                    print("📷 Camera turned OFF")
-            
-            # Microphone ON রাখা
-            # Mic button selector
-            mic_button = page.locator('div[data-tooltip*="microphone" i]')
-            if mic_button.count() > 0:
-                button_state = mic_button.get_attribute('data-is-muted')
-                if button_state == 'true':
-                    mic_button.click()
-                    print("🎤 Microphone turned ON")
-        except Exception as e:
-            print(f"⚠️ Could not control mic/camera: {e}")
-        
-        time.sleep(2)
-        
-        # ============================================
-        # "Join now" button এ click করা
-        # ============================================
-        
-        print("🚪 Attempting to join meeting...")
-        
-        try:
-            # "Join now" বা "Ask to join" button খুঁজছি
-            # Different possible button texts
-            join_selectors = [
-                'button:has-text("Join now")',
-                'button:has-text("Ask to join")',
-                'button:has-text("জয়েন")',  # Bangla
-                'span:has-text("Join now")'
-            ]
-            
-            for selector in join_selectors:
-                join_button = page.locator(selector)
-                if join_button.count() > 0:
-                    join_button.click()
-                    print("✅ Successfully clicked join button!")
-                    break
-        except Exception as e:
-            print(f"❌ Could not find join button: {e}")
-            print("Manual action required: Please click join button manually")
-        
-        # ============================================
-        # Host approval এর জন্য wait করা
-        # ============================================
-        
-        print("⏳ Waiting for host approval (30 seconds)...")
-        time.sleep(30)  # Host approve করার জন্য যথেষ্ট সময়
-        
-        # ============================================
-        # Meeting এ আছি কিনা verify করা
-        # ============================================
-        
-        print("🔍 Checking if joined successfully...")
-        
-        # Check করছি waiting room এ আছি কিনা
-        try:
-            waiting_text = page.locator('text=/waiting for|asking to join/i')
-            if waiting_text.count() > 0:
-                print("⏳ Bot is in waiting room, waiting for host approval...")
-                print("👉 Please click 'Admit' button in your meeting to let the bot join!")
-                
-                # 60 seconds পর্যন্ত wait করবো approval এর জন্য
-                for i in range(12):  # 12 x 5 seconds = 60 seconds
-                    time.sleep(5)
-                    # Check করছি meeting এ ঢুকেছি কিনা
-                    meeting_controls = page.locator('div[data-tooltip*="Turn off microphone"]')
-                    if meeting_controls.count() > 0:
-                        print("✅ Host approved! Joined successfully!")
+            # Camera OFF
+            camera_buttons = page.locator('button[aria-label*="camera" i], div[aria-label*="camera" i]')
+            for i in range(camera_buttons.count()):
+                try:
+                    button = camera_buttons.nth(i)
+                    aria_label = button.get_attribute('aria-label') or ''
+                    if 'turn off' in aria_label.lower():
+                        button.click()
+                        print("📷 Camera turned OFF")
                         break
-                    print(f"⏳ Still waiting... ({(i+1)*5} seconds elapsed)")
-        except:
-            pass
+                except:
+                    pass
+            
+            time.sleep(1)
+            
+            # Mic ON রাখা
+            mic_buttons = page.locator('button[aria-label*="microphone" i], div[aria-label*="microphone" i]')
+            for i in range(mic_buttons.count()):
+                try:
+                    button = mic_buttons.nth(i)
+                    aria_label = button.get_attribute('aria-label') or ''
+                    if 'turn on' in aria_label.lower():
+                        button.click()
+                        print("🎤 Microphone turned ON")
+                        break
+                except:
+                    pass
         
-        # Meeting এর elements আছে কিনা check করা
-        in_meeting = False
+        except Exception as e:
+            print(f"⚠️ Camera/Mic control error: {e}")
+        
+        time.sleep(2)
+        
+        # ============================================
+        # Join Meeting
+        # ============================================
+        
+        print("🚪 Joining meeting...")
+        
+        join_clicked = False
+        join_selectors = [
+            'button:has-text("Join now")',
+            'button:has-text("Ask to join")',
+            'span:has-text("Join now")',
+            'div[role="button"]:has-text("Join")'
+        ]
+        
+        for selector in join_selectors:
+            try:
+                buttons = page.locator(selector)
+                if buttons.count() > 0:
+                    buttons.first.click()
+                    print("✅ Join button clicked!")
+                    join_clicked = True
+                    break
+            except:
+                continue
+        
+        if not join_clicked:
+            print("⚠️ Could not find join button automatically")
+            print("👉 Please click the join button manually")
+        
+        # ============================================
+        # Wait for approval / Join confirmation
+        # ============================================
+        
+        print("⏳ Waiting for meeting join confirmation...")
+        
+        max_wait = 60  # 60 seconds wait করবো
+        joined = False
+        
+        for i in range(max_wait):
+            time.sleep(1)
+            
+            # Check if we're in the meeting
+            try:
+                # Meeting controls visible থাকলে বুঝবো join হয়েছে
+                meeting_indicators = [
+                    'button[aria-label*="Leave call"]',
+                    'button[aria-label*="Turn off microphone"]',
+                    'div[data-meeting-title]'
+                ]
+                
+                for indicator in meeting_indicators:
+                    if page.locator(indicator).count() > 0:
+                        joined = True
+                        break
+                
+                if joined:
+                    print()
+                    print("✅ Successfully joined the meeting!")
+                    print()
+                    break
+                
+                # Progress indicator
+                if (i + 1) % 10 == 0:
+                    print(f"⏳ Still waiting... ({i + 1}s elapsed)")
+            
+            except:
+                continue
+        
+        if not joined:
+            print("⚠️ Could not confirm meeting join")
+            print("⚠️ Assuming joined, continuing anyway...")
+        
+        # ============================================
+        # Start Audio Transcription
+        # ============================================
+        
+        print("=" * 70)
+        print("🎙️ STARTING AUDIO TRANSCRIPTION")
+        print("=" * 70)
+        print()
+        
+        is_recording = True
+        audio_thread = threading.Thread(target=continuous_audio_transcribe, daemon=True)
+        audio_thread.start()
+        
+        # ============================================
+        # Keep Bot in Meeting (Until Ctrl+C)
+        # ============================================
+        
+        print("🤖 Bot is now in the meeting!")
+        print("📝 Transcribing audio in real-time...")
+        print()
+        print("💡 Press Ctrl+C to stop the bot and leave the meeting")
+        print("=" * 70)
+        print()
+        
         try:
-            # Meeting controls (mic, camera buttons) আছে কিনা দেখছি
-            meeting_controls = page.locator('div[data-tooltip*="Turn off microphone"]')
-            if meeting_controls.count() > 0:
-                in_meeting = True
-                print("✅ Successfully joined the meeting!")
-        except:
-            print("⚠️ Could not verify meeting join status")
+            # Infinite loop - meeting চলতে থাকবে
+            while True:
+                # Check if meeting is still active
+                try:
+                    leave_button = page.locator('button[aria-label*="Leave call"]')
+                    if leave_button.count() == 0:
+                        print("⚠️ Meeting seems to have ended")
+                        break
+                except:
+                    pass
+                
+                # Keep page alive
+                time.sleep(10)
+        
+        except KeyboardInterrupt:
+            print()
+            print("⚠️ Ctrl+C detected - Stopping bot...")
         
         # ============================================
-        # Audio recording করা
+        # Cleanup - Leave Meeting
         # ============================================
         
-        if in_meeting:
-            print(f"⏱️ Recording for {RECORDING_DURATION} seconds...")
-            
-            # এখানে তুমি audio recording logic add করবে
-            # (পরের section এ দেখাচ্ছি)
-            
-            time.sleep(RECORDING_DURATION)
-            
-            print("🎬 Recording complete!")
+        print()
+        print("=" * 70)
+        print("🛑 STOPPING BOT")
+        print("=" * 70)
         
-        # ============================================
-        # Meeting থেকে বের হওয়া
-        # ============================================
+        # Stop audio recording
+        is_recording = False
+        if audio_thread:
+            audio_thread.join(timeout=5)
         
         print("👋 Leaving meeting...")
         
         try:
-            # "Leave call" button click করা
             leave_button = page.locator('button[aria-label*="Leave call"]')
             if leave_button.count() > 0:
                 leave_button.click()
                 print("✅ Left the meeting")
+                time.sleep(2)
         except:
-            print("⚠️ Could not find leave button")
+            print("⚠️ Could not click leave button")
         
-        time.sleep(2)
-        
-        # Browser close করা
+        # Close browser
         browser.close()
-        print("🏁 Bot stopped successfully")
-
-
-# ============================================
-# STEP 2: Audio Recording এবং Transcription
-# ============================================
-
-def record_and_transcribe():
-    """
-    এই function audio record করে এবং text এ convert করে
-    
-    ⚠️ NOTE: এটা একটা basic example
-    Production এ তোমাকে proper audio capture করতে হবে
-    """
-    
-    print("🎙️ Starting audio capture...")
-    
-    # Speech recognizer initialize করা
-    recognizer = sr.Recognizer()
-    
-    # Microphone থেকে audio নেওয়া
-    with sr.Microphone() as source:
-        print("🔊 Listening...")
         
-        # Background noise adjust করা
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-        
-        # Audio record করা (30 seconds)
-        audio = recognizer.listen(source, timeout=30, phrase_time_limit=30)
-        
-        print("✅ Audio captured!")
-    
-    # ============================================
-    # Speech to Text conversion
-    # ============================================
-    
-    print("📝 Converting speech to text...")
-    
-    try:
-        # Google Speech Recognition API use করছি (free)
-        text = recognizer.recognize_google(audio, language='en-US')
-        
-        print(f"✅ Transcription complete!")
-        print(f"📄 Text: {text}")
-        
-        # Text file এ save করা
-        with open('output.txt', 'w', encoding='utf-8') as f:
-            f.write(text)
-        
-        print("💾 Saved to output.txt")
-        
-        return text
-        
-    except sr.UnknownValueError:
-        print("❌ Could not understand audio")
-        return None
-    except sr.RequestError as e:
-        print(f"❌ API error: {e}")
-        return None
-
+        print()
+        print("=" * 70)
+        print("🏁 BOT STOPPED SUCCESSFULLY")
+        print(f"📁 Transcripts saved in: {OUTPUT_FOLDER}/")
+        print("=" * 70)
 
 # ============================================
-# MAIN FUNCTION (এখান থেকে সব শুরু হয়)
+# MAIN
 # ============================================
 
 def main():
-    """
-    Main entry point
-    """
-    print("=" * 50)
-    print("🤖 DIALOGSY MEET BOT - STEP 1")
-    print("=" * 50)
-    print()
-    
-    # Step 1: Meeting এ join করা
-    join_google_meet(MEETING_LINK)
-    
-    # Step 2: Audio transcribe করা (পরে করবো)
-    # transcript = record_and_transcribe()
-
-
-# ============================================
-# Script run করা
-# ============================================
+    try:
+        join_google_meet_persistent(MEETING_LINK)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
