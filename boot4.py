@@ -15,7 +15,7 @@ BOT_NAME = "Test Bot"
 OUTPUT_FOLDER = "transcripts"
 RECORD_CHUNK_SECONDS = 5
 
-# Audio recording settings
+
 AUDIO_FORMAT = pyaudio.paInt16
 AUDIO_CHANNELS = 2
 AUDIO_RATE = 44100
@@ -39,7 +39,7 @@ def record_audio(audio_file_path):
     audio = pyaudio.PyAudio()
     
     try:
-        # Open audio stream
+        
         stream = audio.open(
             format=AUDIO_FORMAT,
             channels=AUDIO_CHANNELS,
@@ -60,11 +60,11 @@ def record_audio(audio_file_path):
                 print(f"Audio recording error: {e}")
                 continue
         
-        # Stop and close stream
+       
         stream.stop_stream()
         stream.close()
         
-        # Save audio file
+        
         with wave.open(audio_file_path, 'wb') as wf:
             wf.setnchannels(AUDIO_CHANNELS)
             wf.setsampwidth(audio.get_sample_size(AUDIO_FORMAT))
@@ -85,7 +85,7 @@ def transcribe_audio(transcript_file, page):
     global is_recording, meeting_metadata
     
     recognizer = sr.Recognizer()
-    speaker_stats = {}  # Track who spoke how many times
+    speaker_stats = {}  
     
     with open(transcript_file, 'w', encoding='utf-8') as f:
         f.write(f"Meeting Transcript - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -93,7 +93,7 @@ def transcribe_audio(transcript_file, page):
     
     print(f"Transcript: {transcript_file}")
     
-    # Try to enable captions for speaker identification
+    
     print("Attempting to enable captions for speaker tracking...")
     try:
         enable_captions(page)
@@ -103,7 +103,7 @@ def transcribe_audio(transcript_file, page):
     
     while is_recording:
         try:
-            # Try to get speaker from captions
+            
             current_speaker = get_current_speaker_from_caption(page)
             
             with sr.Microphone() as source:
@@ -767,16 +767,16 @@ def join_meeting(meeting_url):
         print("\n" + "="*70)
         print("Bot stopped successfully")
         print("="*70)
-        print(f"\n📁 Meeting folder: {meeting_folder}")
-        print(f"\n📄 Files created:")
+        print(f"\n Meeting folder: {meeting_folder}")
+        print(f"\n Files created:")
         print(f"  🎵 Audio: {os.path.basename(audio_file)}")
         print(f"     Path: {audio_file}")
-        print(f"  📝 Transcript: {os.path.basename(transcript_file)}")
+        print(f"   Transcript: {os.path.basename(transcript_file)}")
         print(f"     Path: {transcript_file}")
-        print(f"  📊 Metadata: {os.path.basename(metadata_file)}")
+        print(f"   Metadata: {os.path.basename(metadata_file)}")
         print(f"     Path: {metadata_file}")
-        print(f"\n⏱️  Duration: {meeting_metadata['duration_minutes']} minutes")
-        print(f"👥 Participants: {meeting_metadata['participant_count']}")
+        print(f"\n⏱  Duration: {meeting_metadata['duration_minutes']} minutes")
+        print(f" Participants: {meeting_metadata['participant_count']}")
         print("="*70 + "\n")
 
 
