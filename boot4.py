@@ -262,34 +262,45 @@ def extract_participants(page):
             'div[aria-label*="Show everyone" i]',
             'button[jsname="A5il2e"]',  # Google Meet specific
             '[data-tooltip*="people" i]',
-            '[aria-label*="participants" i]'
+            '[aria-label*="participants" i]',
+            'button[data-is-muted]',  # Alternative selector
+            'div[role="button"][aria-label*="participant" i]'
         ]
         
         panel_opened = False
         
-        for selector in participant_button_selectors:
-            try:
-                buttons = page.locator(selector)
-                if buttons.count() > 0:
-                    # Try to get participant count from aria-label
-                    aria_label = buttons.first.get_attribute('aria-label') or ''
-                    print(f"  Found button: {aria_label}")
-                    
-                    # Extract count from aria-label (e.g., "Show everyone (5)")
-                    import re
-                    count_match = re.search(r'\((\d+)\)', aria_label)
-                    if count_match:
-                        participant_count = int(count_match.group(1))
-                        print(f"  Participant count: {participant_count}")
-                    
-                    # Click to open panel
-                    buttons.first.click()
-                    print("  Clicked participant panel button")
-                    panel_opened = True
-                    time.sleep(2)  # Wait for panel to open
-                    break
-            except Exception as e:
-                continue
+        # Try multiple times with delays
+        for attempt in range(3):
+            print(f"  Attempt {attempt + 1}/3 to find participant panel...")
+            
+            for selector in participant_button_selectors:
+                try:
+                    buttons = page.locator(selector)
+                    if buttons.count() > 0:
+                        # Try to get participant count from aria-label
+                        aria_label = buttons.first.get_attribute('aria-label') or ''
+                        print(f"  Found button: {aria_label}")
+                        
+                        # Extract count from aria-label (e.g., "Show everyone (5)")
+                        count_match = re.search(r'\((\d+)\)', aria_label)
+                        if count_match:
+                            participant_count = int(count_match.group(1))
+                            print(f"  Participant count: {participant_count}")
+                        
+                        # Click to open panel
+                        buttons.first.click()
+                        print("  ✓ Clicked participant panel button")
+                        panel_opened = True
+                        time.sleep(3)  # Increased wait time for panel to open
+                        break
+                except Exception as e:
+                    continue
+            
+            if panel_opened:
+                break
+            
+            # Wait before retry
+            time.sleep(2)
         
         # If panel opened, extract names
         if panel_opened:
@@ -301,35 +312,82 @@ def extract_participants(page):
                 '.participant-name',
                 '[role="listitem"] span',
                 'div[jsname] span[jsname]',
-                '[data-requested-participant-id] span'
+                '[data-requested-participant-id] span',
+                '[data-participant-id]',  # Try parent element
+                'div[data-self-name]',
+                'span[data-self-name]'
             ]
             
-            time.sleep(2)  # Extra wait for names to load
+            time.sleep(3)  # Extra wait for names to load
+            
+            # Common UI text to skip
+            skip_words = [
+                'you', 'mute', 'unmute', 'more', 'pin', 'menu', 
+                'options', 'present', 'raise', 'hand', 'settings',
+                'turn', 'off', 'on', 'camera', 'microphone',
+                'visual_effects', 'backgrounds', 'effects',
+                'blur', 'background', 'virtual', 'filters'
+            ]
             
             for selector in name_selectors:
                 try:
                     name_elements = page.locator(selector)
                     count = name_elements.count()
-                    print(f"  Found {count} elements with selector: {selector[:50]}")
                     
-                    for i in range(min(count, 50)):  # Max 50 participants
-                        try:
-                            name = name_elements.nth(i).inner_text().strip()
-                            
-                            # Filter out invalid names
-                            if name and len(name) > 1 and name not in participants:
-                                # Skip common UI text
-                                skip_words = ['you', 'mute', 'unmute', 'more', 'pin', 'menu', 
-                                            'options', 'present', 'raise', 'hand', 'settings']
-                                if name.lower() not in skip_words and not name.isdigit():
-                                    participants.append(name)
-                                    print(f"    ✓ Added: {name}")
-                        except:
-                            continue
-                    
-                    if participants:
-                        break
-                except:
+                    if count > 0:
+                        print(f"  Found {count} elements with selector: {selector[:50]}")
+                        
+                        for i in range(min(count, 50)):  # Max 50 participants
+                            try:
+                                element = name_elements.nth(i)
+                                
+                                # Try multiple attributes
+                                name = None
+                                
+                                # Try data-self-name attribute
+                                name = element.get_attribute('data-self-name')
+                                if not name:
+                                    # Try inner text
+                                    name = element.inner_text().strip()
+                                
+                                # Clean the name
+                                if name:
+                                    # Remove newlines and extra whitespace
+                                    name = ' '.join(name.split())
+                                    
+                                    # Split by newline and take first part
+                                    if '\n' in name:
+                                        name = name.split('\n')[0].strip()
+                                    
+                                    # Validate and filter
+                                    if len(name) > 1 and name not in participants:
+                                        # Convert to lowercase for checking
+                                        name_lower = name.lower()
+                                        
+                                        # Skip if contains UI keywords
+                                        if any(skip in name_lower for skip in skip_words):
+                                            continue
+                                        
+                                        # Skip if only digits
+                                        if name.isdigit():
+                                            continue
+                                        
+                                        # Skip if too long (likely UI text)
+                                        if len(name) > 50:
+                                            continue
+                                        
+                                        # Skip if contains special UI characters
+                                        if any(char in name for char in ['→', '•', '▼', '▲']):
+                                            continue
+                                        
+                                        participants.append(name)
+                                        print(f"    ✓ Added: {name}")
+                            except:
+                                continue
+                        
+                        if participants:
+                            break
+                except Exception as e:
                     continue
             
             # Close panel
@@ -373,6 +431,16 @@ def extract_participants(page):
         except Exception as e:
             print(f"  Method 2 failed: {e}")
     
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_participants = []
+    for p in participants:
+        if p not in seen:
+            seen.add(p)
+            unique_participants.append(p)
+    
+    participants = unique_participants
+    
     # METHOD 3: Fallback - at least show participant count
     if not participants and participant_count > 0:
         print(f"\nFallback: Creating participant list based on count ({participant_count})")
@@ -383,8 +451,9 @@ def extract_participants(page):
     if not participants:
         participants = ["Unknown (Could not extract names)"]
         print("\n  ⚠ Could not extract participant names")
+        print("  💡 Tip: Try manually opening the participant panel or enabling captions")
     else:
-        print(f"\n  ✓ Successfully extracted {len(participants)} participants")
+        print(f"\n  ✓ Successfully extracted {len(participants)} unique participants")
     
     return participants
 
@@ -575,18 +644,20 @@ def join_meeting(meeting_url):
         if not joined:
             print("Could not confirm join, continuing anyway...\n")
         
-        # Extract meeting metadat
+        # Extract meeting metadata
         print("Extracting meeting metadata...")
         meeting_metadata["title"] = extract_meeting_title(page)
         meeting_metadata["status"] = "active"
         
-        time.sleep(3)
+        print("Waiting for page to fully load...")
+        time.sleep(5)  # Increased wait time for better stability
         
-        # Extract participants (after joining)
+        # Extract participants (after joining and waiting)
+        print("\nExtracting participants...")
         meeting_metadata["participants"] = extract_participants(page)
         meeting_metadata["participant_count"] = len(meeting_metadata["participants"])
         
-        print(f"Meeting Title: {meeting_metadata['title']}")
+        print(f"\nMeeting Title: {meeting_metadata['title']}")
         print(f"Participants ({meeting_metadata['participant_count']}): {', '.join(meeting_metadata['participants'][:5])}", end="")
         if meeting_metadata['participant_count'] > 5:
             print(f" ... and {meeting_metadata['participant_count'] - 5} more")
