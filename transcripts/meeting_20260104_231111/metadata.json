@@ -1,0 +1,21 @@
+{
+  "meeting_code": "wra-zccw-fdf",
+  "meeting_url": "https://meet.google.com/wra-zccw-fdf",
+  "bot_name": "Test Bot",
+  "start_time": "2026-01-04 23:11:11",
+  "end_time": "2026-01-04 23:12:18",
+  "duration_minutes": 1.12,
+  "title": "Meet - wra-zccw-fdf",
+  "participants": [
+    "Unknown (Could not extract - see diagnostic files)"
+  ],
+  "participant_count": 1,
+  "speaker_stats": {},
+  "audio_file": "audio.wav",
+  "audio_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260104_231111/audio.wav",
+  "transcript_file": "transcript.txt",
+  "transcript_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260104_231111/transcript.txt",
+  "metadata_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260104_231111/metadata.json",
+  "meeting_folder": "/media/sayem/data/meeting_bot/transcripts/meeting_20260104_231111",
+  "status": "completed"
+}
