@@ -1,0 +1,24 @@
+{
+  "meeting_code": "vcn-ytpt-sso",
+  "meeting_url": "https://meet.google.com/vcn-ytpt-sso",
+  "bot_name": "Test Bot",
+  "start_time": "2026-01-06 01:40:55",
+  "end_time": "2026-01-06 01:41:39",
+  "duration_minutes": 0.75,
+  "title": "Meet - vcn-ytpt-sso",
+  "participants": [
+    "sayma biswas sayma biswas",
+    "sayma biswas",
+    "Test Bot Test Bot",
+    "Test Bot"
+  ],
+  "participant_count": 4,
+  "speaker_stats": {},
+  "audio_file": "audio.wav",
+  "audio_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260106_014055/audio.wav",
+  "transcript_file": "transcript.txt",
+  "transcript_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260106_014055/transcript.txt",
+  "metadata_file_path": "/media/sayem/data/meeting_bot/transcripts/meeting_20260106_014055/metadata.json",
+  "meeting_folder": "/media/sayem/data/meeting_bot/transcripts/meeting_20260106_014055",
+  "status": "completed"
+}
