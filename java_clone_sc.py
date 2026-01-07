@@ -1,4 +1,3 @@
-# app.py - Main FastAPI Application
 from fastapi import FastAPI, File, UploadFile, HTTPException, Path
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -338,6 +337,38 @@ def get_transcription_result(job_name: str = Path(..., description="Transcriptio
         "message": "Transcription completed",
         "data": result
     }
+
+
+@app.get("/api/transcribe/download/{job_name}")
+def download_transcript(job_name: str = Path(..., description="Transcription job name")):
+    """
+    Download transcript as .txt file
+    
+    - **job_name**: Transcription job identifier
+    """
+    from fastapi.responses import Response
+    
+    result = TranscriptionService.get_transcript(job_name)
+    
+    if result['status'] != 'COMPLETED':
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Transcription not completed. Status: {result['status']}"
+        )
+    
+    transcript = result.get('transcript', '')
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="No transcript found")
+    
+    # Return as downloadable text file
+    return Response(
+        content=transcript,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f"attachment; filename=transcript_{job_name}.txt"
+        }
+    )
 
 
 @app.delete("/api/transcribe/job/{job_name}")

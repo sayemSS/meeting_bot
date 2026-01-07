@@ -1,5 +1,3 @@
-# bucket_script.py
-
 import boto3
 import json
 import time
